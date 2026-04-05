@@ -57,3 +57,18 @@ python app.py
 ```
 
 Open browser at `http://127.0.0.1:8050`.
+
+## Re-run
+
+1. Activate virtual environment:
+
+```bash
+source venv/bin/activate
+
+```
+
+2. Run app:
+
+```bash
+python app.py
+```
