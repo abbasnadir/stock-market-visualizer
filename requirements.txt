@@ -1,0 +1,6 @@
+dash>=2.18.0
+plotly>=5.24.0
+pandas>=2.2.0
+yfinance>=0.2.52
+python-dotenv>=1.0.1
+supabase==2.22.4

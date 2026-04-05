@@ -1,0 +1,105 @@
+:root {
+  --bg: #f5f6fa;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --accent: #0f766e;
+  --accent-soft: #ccfbf1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at 10% 10%, #ecfeff 0%, var(--bg) 40%),
+    radial-gradient(circle at 90% 0%, #e0f2fe 0%, var(--bg) 35%);
+  color: var(--text);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+.page {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.app-header {
+  background: linear-gradient(120deg, #134e4a 0%, #115e59 50%, #0f766e 100%);
+  color: #f8fafc;
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 10px 25px rgba(2, 44, 34, 0.22);
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: 0.01em;
+}
+
+.app-header p {
+  margin: 8px 0 0;
+}
+
+.status-text {
+  display: inline-block;
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.14);
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.feature-grid {
+  margin-top: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.feature-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+.feature-card h2 {
+  margin: 0 0 12px;
+  font-size: 1.2rem;
+}
+
+input,
+select,
+button {
+  font-family: inherit;
+  font-size: 0.95rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  padding: 8px 10px;
+}
+
+button {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 12px;
+  }
+
+  .app-header h1 {
+    font-size: 1.5rem;
+  }
+}
