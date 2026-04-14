@@ -56,18 +56,20 @@ class AuthFeature(BaseFeature):
             Input("auth-login-btn", "n_clicks"),
             Input("auth-signup-btn", "n_clicks"),
             Input("auth-logout-btn", "n_clicks"),
+            Input("profile-switch-btn", "n_clicks"),
+            Input("profile-logout-btn", "n_clicks"),
             State("auth-email-input", "value"),
             State("auth-password-input", "value"),
             State("global-user-store", "data"),
             prevent_initial_call=True,
         )
-        def handle_auth(login_clicks, signup_clicks, logout_clicks, email, password, user_store):
-            del login_clicks, signup_clicks, logout_clicks
+        def handle_auth(login_clicks, signup_clicks, logout_clicks, switch_clicks, prof_logout_clicks, email, password, user_store):
+            del login_clicks, signup_clicks, logout_clicks, switch_clicks, prof_logout_clicks
 
             action = ctx.triggered_id
             user_store = user_store or {}
 
-            if action == "auth-logout-btn":
+            if action in {"auth-logout-btn", "profile-logout-btn", "profile-switch-btn"}:
                 result = self.services.supabase_service.sign_out()
                 if result.success:
                     return (

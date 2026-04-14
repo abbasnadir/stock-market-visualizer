@@ -9,6 +9,31 @@ import yfinance as yf
 class MarketDataService:
     """Fetches stock prices and historical series from Yahoo Finance."""
 
+    def get_stock_metadata(self, symbol: str) -> dict[str, float | str]:
+        """Fetches supplemental quote metadata for dashboard summary cards."""
+        ticker = yf.Ticker(symbol)
+
+        info = {}
+        try:
+            info = ticker.info or {}
+        except Exception:
+            info = {}
+
+        market_cap = float(info.get("marketCap") or 0.0)
+        volume = float(info.get("volume") or info.get("averageVolume") or 0.0)
+        pe_ratio = float(info.get("trailingPE") or info.get("forwardPE") or 0.0)
+        shares = float(info.get("sharesOutstanding") or 0.0)
+        company_name = str(info.get("longName") or info.get("shortName") or symbol.upper())
+
+        return {
+            "symbol": symbol.upper(),
+            "company_name": company_name,
+            "market_cap": market_cap,
+            "volume": volume,
+            "pe_ratio": pe_ratio,
+            "shares_outstanding": shares,
+        }
+
     def get_latest_price(self, symbol: str) -> float:
         ticker = yf.Ticker(symbol)
 
