@@ -6,29 +6,24 @@ import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, dcc, html
 
 from src.features.base_feature import BaseFeature
+from src.ui.formatters import (
+    format_compact_number,
+    format_currency,
+    format_percent,
+    get_change_tone,
+    normalize_symbol,
+)
 
 
 class MarketFeature(BaseFeature):
     """Displays live quote snapshot and historical close chart."""
 
-    @staticmethod
-    def _format_compact_number(value: float) -> str:
-        if value >= 1_000_000_000_000:
-            return f"{value / 1_000_000_000_000:.2f}T"
-        if value >= 1_000_000_000:
-            return f"{value / 1_000_000_000:.2f}B"
-        if value >= 1_000_000:
-            return f"{value / 1_000_000:.2f}M"
-        if value >= 1_000:
-            return f"{value / 1_000:.2f}K"
-        return f"{value:.0f}"
-
     def _build_chart(self, symbol: str, history):
         figure = go.Figure()
         figure.update_layout(
             margin={"l": 10, "r": 10, "t": 10, "b": 10},
-            xaxis={"showgrid": True, "gridcolor": "#edf2f7", "zeroline": False},
-            yaxis={"showgrid": True, "gridcolor": "#edf2f7", "zeroline": False},
+            xaxis={"showgrid": True, "gridcolor": "rgba(148, 163, 184, 0.16)", "zeroline": False},
+            yaxis={"showgrid": True, "gridcolor": "rgba(148, 163, 184, 0.16)", "zeroline": False},
             template="plotly_white",
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
@@ -42,8 +37,8 @@ class MarketFeature(BaseFeature):
                     y=history["Close"],
                     mode="lines",
                     fill="tozeroy",
-                    fillcolor="rgba(92, 107, 192, 0.12)",
-                    line={"width": 2.5, "color": "#5c6bc0"},
+                    fillcolor="rgba(43, 108, 176, 0.14)",
+                    line={"width": 2.8, "color": "#1d4ed8"},
                     name=symbol,
                     showlegend=False,
                 )
@@ -67,27 +62,39 @@ class MarketFeature(BaseFeature):
             [
                 html.Div(
                     [
-                        dcc.Input(
-                            id="market-symbol-input",
-                            type="text",
-                            value=default_symbol,
-                            placeholder="Ticker (e.g. AAPL)",
-                            style={"padding": "8px 12px", "borderRadius": "8px", "border": "1px solid #d6deeb"},
-                        ),
-                        dcc.Dropdown(
-                            id="market-period-select",
-                            options=[
-                                {"label": "1 Month", "value": "1mo"},
-                                {"label": "3 Months", "value": "3mo"},
-                                {"label": "6 Months", "value": "6mo"},
-                                {"label": "1 Year", "value": "1y"},
-                                {"label": "2 Years", "value": "2y"},
+                        html.Div(
+                            [
+                                html.P("Symbol", className="input-label"),
+                                dcc.Input(
+                                    id="market-symbol-input",
+                                    type="text",
+                                    value=default_symbol,
+                                    placeholder="Ticker (e.g. AAPL)",
+                                    className="app-input",
+                                ),
                             ],
-                            value="6mo",
-                            clearable=False,
-                            style={"margin": "0 8px", "minWidth": "160px"},
+                            className="field-stack grow",
                         ),
-                        html.Button("Search", id="market-refresh-btn", n_clicks=0),
+                        html.Div(
+                            [
+                                html.P("Range", className="input-label"),
+                                dcc.Dropdown(
+                                    id="market-period-select",
+                                    options=[
+                                        {"label": "1 Month", "value": "1mo"},
+                                        {"label": "3 Months", "value": "3mo"},
+                                        {"label": "6 Months", "value": "6mo"},
+                                        {"label": "1 Year", "value": "1y"},
+                                        {"label": "2 Years", "value": "2y"},
+                                    ],
+                                    value="6mo",
+                                    clearable=False,
+                                    className="app-dropdown",
+                                ),
+                            ],
+                            className="field-stack compact",
+                        ),
+                        html.Button("Refresh Market", id="market-refresh-btn", n_clicks=0, className="primary-btn"),
                     ],
                     className="market-search-row",
                 ),
@@ -97,7 +104,7 @@ class MarketFeature(BaseFeature):
                         html.Div(
                             [
                                 html.H1(id="stock-name", children="Apple"),
-                                html.P(id="stock-sub", children="Market snapshot and trend overview"),
+                                html.P(id="stock-sub", children="Market snapshot, live quote, momentum context"),
                             ],
                             className="stock-title",
                         ),
@@ -210,6 +217,14 @@ class MarketFeature(BaseFeature):
 
     def register_callbacks(self, app: Dash) -> None:
         @app.callback(
+            Output("market-symbol-input", "value"),
+            Input("selected-symbol-store", "data"),
+            prevent_initial_call=False,
+        )
+        def sync_market_symbol(selected_symbol):
+            return normalize_symbol((selected_symbol or {}).get("symbol"), self.services.settings.default_symbol)
+
+        @app.callback(
             Output("market-quote-output", "children"),
             Output("market-chart-container", "children"),
             Output("stock-logo", "children"),
@@ -243,6 +258,7 @@ class MarketFeature(BaseFeature):
             Output("rs-mcap", "children"),
             Output("rs-volume", "children"),
             Output("rs-pe", "children"),
+            Output("selected-symbol-store", "data"),
             Input("market-refresh-btn", "n_clicks"),
             State("market-symbol-input", "value"),
             State("market-period-select", "value"),
@@ -251,7 +267,7 @@ class MarketFeature(BaseFeature):
         def refresh_market_view(_, symbol, period):
             del _
 
-            symbol = (symbol or self.services.settings.default_symbol).upper().strip()
+            symbol = normalize_symbol(symbol, self.services.settings.default_symbol)
             period = period or "6mo"
 
             snapshot = self.services.market_data_service.get_quote_snapshot(symbol)
@@ -276,21 +292,29 @@ class MarketFeature(BaseFeature):
             company_name = str(metadata.get("company_name") or symbol)
 
             fdmc_value = market_cap if market_cap > 0 else price * shares_outstanding
-            is_up = change >= 0
-            trend_symbol = "+" if is_up else "-"
-            trend_color = "var(--success)" if is_up else "var(--danger)"
+            tone, trend_class = get_change_tone(change)
+            if price > 0:
+                trend_color = "var(--success)" if tone == "positive" else "var(--danger)" if tone == "negative" else "var(--text-muted)"
+                trend_text = format_percent(change_pct)
+                chart_change = f"{'+' if change >= 0 else ''}{change:.2f} ({change_pct:+.2f}%)"
+                price_text = format_currency(price)
+                rs_change_text = f"{'+' if change >= 0 else ''}{change:.2f}"
+            else:
+                quote_text = f"{symbol} | Live quote unavailable. Check ticker/network and retry."
+                trend_color = "var(--text-muted)"
+                trend_text = "Unavailable"
+                trend_class = "trend-badge neutral"
+                chart_change = "Unavailable"
+                price_text = "Unavailable"
+                rs_change_text = "Unavailable"
 
-            trend_text = f"{trend_symbol} {abs(change_pct):.2f}%"
-            trend_class = "trend-badge up" if is_up else "trend-badge down"
-            chart_change = f"{'+' if change >= 0 else ''}{change:.2f} ({change_pct:+.2f}%)"
-
-            mcap_text = f"${self._format_compact_number(market_cap)}" if market_cap > 0 else "$0.00"
-            volume_text = self._format_compact_number(volume) if volume > 0 else "0"
-            fdmc_text = f"${self._format_compact_number(fdmc_value)}" if fdmc_value > 0 else "$0.00"
-            circ_text = self._format_compact_number(shares_outstanding) if shares_outstanding > 0 else "0"
+            mcap_text = format_compact_number(market_cap, prefix="$")
+            volume_text = format_compact_number(volume)
+            fdmc_text = format_compact_number(fdmc_value, prefix="$")
+            circ_text = format_compact_number(shares_outstanding)
 
             logo_char = symbol[0] if symbol else "?"
-            subtitle = "Live market snapshot"
+            subtitle = "Live market snapshot with synced workspace ticker"
 
             return (
                 quote_text,
@@ -300,10 +324,10 @@ class MarketFeature(BaseFeature):
                 company_name,
                 subtitle,
                 f"{company_name} ({symbol})",
-                f"${price:.2f}",
+                price_text,
                 trend_text,
                 trend_class,
-                f"${price:.2f}",
+                price_text,
                 chart_change,
                 {"color": trend_color, "marginLeft": "8px"},
                 mcap_text,
@@ -320,10 +344,11 @@ class MarketFeature(BaseFeature):
                 {"color": trend_color, "fontWeight": "600"},
                 f"{company_name} ({symbol})",
                 company_name,
-                f"${price:.2f}",
+                price_text,
                 symbol,
-                f"{'+' if change >= 0 else ''}{change:.2f}",
+                rs_change_text,
                 mcap_text,
                 volume_text,
                 f"{pe_ratio:.2f}" if pe_ratio > 0 else "-",
+                {"symbol": symbol},
             )

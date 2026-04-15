@@ -83,15 +83,54 @@ create table if not exists public.alerts (
 
 Enable RLS for all user-owned tables (`profiles`, `portfolios`, `transactions`, `watchlists`, `alerts`).
 
-Policy pattern for each table:
+Use the ready-to-run script in `supabase_setup.sql`.
+
+If you are applying manually, ensure these key rules are present:
 
 ```sql
 alter table public.profiles enable row level security;
-create policy "users_own_profile" on public.profiles
-  for all using (auth.uid() = id) with check (auth.uid() = id);
+
+create policy "profiles_select_own" on public.profiles
+  for select using (auth.uid() = id);
+
+create policy "profiles_insert_own" on public.profiles
+  for insert with check (auth.uid() = id);
+
+create policy "profiles_update_own" on public.profiles
+  for update using (auth.uid() = id) with check (auth.uid() = id);
 ```
 
 Use equivalent `auth.uid() = user_id` policies for all other tables.
+
+## Critical Sign-up Trigger Setup
+
+To avoid `Database error saving new user` during sign-up when `profiles` is auto-created,
+the trigger function must be `SECURITY DEFINER` and target `public.profiles` safely.
+
+Use this pattern:
+
+```sql
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, balance)
+  values (new.id, new.email, 100000)
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+```
+
+This is included in `supabase_setup.sql`.
 
 ## Feature to Table Mapping
 

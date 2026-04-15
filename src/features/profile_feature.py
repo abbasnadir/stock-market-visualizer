@@ -5,6 +5,7 @@ from __future__ import annotations
 from dash import Dash, Input, Output, dcc, html
 
 from src.features.base_feature import BaseFeature
+from src.ui.formatters import format_currency
 
 
 class ProfileFeature(BaseFeature):
@@ -14,7 +15,7 @@ class ProfileFeature(BaseFeature):
         return html.Div(
             [
                 html.Div(
-                    html.Span("??", id="profile-initials"),
+                    html.Span("GU", id="profile-initials"),
                     className="profile-icon",
                     tabIndex="0",
                 ),
@@ -40,7 +41,7 @@ class ProfileFeature(BaseFeature):
                         html.Hr(),
                         html.Div(
                             [
-                                html.P("Value Insights", className="insights-label"),
+                                html.P("Account Snapshot", className="insights-label"),
                                 html.Div(
                                     [
                                         html.Span("Total Portfolio:", className="insight-title"),
@@ -83,6 +84,18 @@ class ProfileFeature(BaseFeature):
 
     def register_callbacks(self, app: Dash) -> None:
         @app.callback(
+            Output("profile-switch-btn", "style"),
+            Output("profile-logout-btn", "style"),
+            Input("global-user-store", "data"),
+            prevent_initial_call=False,
+        )
+        def toggle_profile_actions(user_data):
+            user_data = user_data or {}
+            if user_data.get("user_id"):
+                return {"display": "inline-flex"}, {"display": "inline-flex"}
+            return {"display": "none"}, {"display": "none"}
+
+        @app.callback(
             Output("profile-initials", "children"),
             Output("profile-name", "children"),
             Output("profile-email", "children"),
@@ -99,9 +112,9 @@ class ProfileFeature(BaseFeature):
 
             if not user_data or "user_id" not in user_data:
                 return (
-                    "??",
-                    "Not Logged In",
-                    "Please log in to view insights",
+                    "GU",
+                    "Guest User",
+                    "Sign in to unlock workspace",
                     "$0.00",
                     "0.00%",
                     "0",
@@ -114,20 +127,33 @@ class ProfileFeature(BaseFeature):
             initials = email[:2].upper() if len(email) >= 2 else "U"
             name = email.split("@")[0].capitalize() if email else "User"
 
-            cash = self.services.portfolio_repository.get_balance(user_id)
-            positions = self.services.portfolio_repository.get_positions(user_id)
+            try:
+                cash = self.services.portfolio_repository.get_balance(user_id)
+                positions = self.services.portfolio_repository.get_positions(user_id)
+            except RuntimeError as exc:
+                return (
+                    initials,
+                    name,
+                    f"{email} | {exc}",
+                    "Unavailable",
+                    "Unavailable",
+                    "0",
+                    "insight-value",
+                )
 
             total_equity = 0.0
             total_cost_basis = 0.0
             stocks_count = len(positions)
+            snapshots = self.services.market_data_service.get_quote_map([pos["symbol"] for pos in positions])
 
             for pos in positions:
                 symbol = pos["symbol"]
                 qty = float(pos["quantity"])
                 avg_cost = float(pos["avg_cost"])
 
-                snap = self.services.market_data_service.get_quote_snapshot(symbol)
-                live_price = snap.get("price", avg_cost)
+                live_price = float(snapshots.get(symbol, {}).get("price") or 0.0)
+                if live_price <= 0:
+                    continue
 
                 total_equity += live_price * qty
                 total_cost_basis += avg_cost * qty
@@ -143,7 +169,7 @@ class ProfileFeature(BaseFeature):
                 initials,
                 name,
                 email,
-                f"${total_value:,.2f}",
+                format_currency(total_value, allow_zero=True),
                 pl_text,
                 str(stocks_count),
                 pl_class,

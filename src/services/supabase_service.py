@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from supabase import Client, create_client
 
 from src.config.settings import AppSettings
 from src.core.result import OperationResult
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class SupabaseService:
@@ -34,6 +38,80 @@ class SupabaseService:
     def is_configured(self) -> bool:
         return self.client is not None
 
+    @staticmethod
+    def _exception_metadata(exc: Exception) -> str:
+        """Extract non-sensitive diagnostic metadata from provider exceptions."""
+        metadata: list[str] = []
+        for key in ("code", "status_code", "details", "hint"):
+            value = getattr(exc, key, None)
+            if value:
+                metadata.append(f"{key}={value}")
+        return " | ".join(metadata)
+
+    def _auth_error_result(self, action: str, exc: Exception) -> OperationResult:
+        raw_message = str(exc)
+        normalized = raw_message.lower()
+        diagnostic = self._exception_metadata(exc)
+
+        if "email rate limit exceeded" in normalized or ("rate limit" in normalized and "email" in normalized):
+            return OperationResult(
+                success=False,
+                message=(
+                    "Supabase email verification rate limit is active for this project. "
+                    "Use Login if the account already exists. If this persists, check Supabase Auth rate limits "
+                    "and SMTP settings in the project dashboard."
+                ),
+                data={"code": "email_rate_limit", "raw_error": raw_message, "action": action},
+            )
+
+        if "database error saving new user" in normalized:
+            return OperationResult(
+                success=False,
+                message=(
+                    "Sign-up could not complete because Supabase failed to save the new auth user. "
+                    "Most common cause is a failing auth trigger/RLS rule (often on profile creation). "
+                    "Open Supabase Logs -> Auth and Database to inspect the exact SQL error."
+                ),
+                data={
+                    "code": "database_error_saving_new_user",
+                    "raw_error": raw_message,
+                    "action": action,
+                    "diagnostic": diagnostic,
+                },
+            )
+
+        if "user already registered" in normalized or "already been registered" in normalized:
+            return OperationResult(
+                success=False,
+                message="Account already exists. Try logging in instead of creating a new account.",
+                data={"code": "user_exists", "raw_error": raw_message, "action": action},
+            )
+
+        if "email not confirmed" in normalized:
+            return OperationResult(
+                success=False,
+                message="Account exists but email is not verified yet. Check your inbox and verify before logging in.",
+                data={"code": "email_not_confirmed", "raw_error": raw_message, "action": action},
+            )
+
+        if "invalid login credentials" in normalized:
+            return OperationResult(
+                success=False,
+                message="Invalid email or password.",
+                data={"code": "invalid_credentials", "raw_error": raw_message, "action": action},
+            )
+
+        return OperationResult(
+            success=False,
+            message=f"{action.capitalize()} failed: {raw_message}",
+            data={
+                "code": "unknown_auth_error",
+                "raw_error": raw_message,
+                "action": action,
+                "diagnostic": diagnostic,
+            },
+        )
+
     def sign_up(self, email: str, password: str) -> OperationResult:
         if not self.client:
             return OperationResult(
@@ -52,7 +130,8 @@ class SupabaseService:
                 )
             return OperationResult(success=False, message="Sign-up returned no user object.")
         except Exception as exc:
-            return OperationResult(success=False, message=f"Sign-up failed: {exc}")
+            LOGGER.exception("Supabase sign-up failed: %s | %s", exc, self._exception_metadata(exc))
+            return self._auth_error_result("sign-up", exc)
 
     def sign_in(self, email: str, password: str) -> OperationResult:
         if not self.client:
@@ -81,7 +160,8 @@ class SupabaseService:
 
             return OperationResult(success=False, message="Invalid login response from Supabase.")
         except Exception as exc:
-            return OperationResult(success=False, message=f"Login failed: {exc}")
+            LOGGER.exception("Supabase login failed: %s | %s", exc, self._exception_metadata(exc))
+            return self._auth_error_result("login", exc)
 
     def sign_out(self) -> OperationResult:
         if not self.client:
