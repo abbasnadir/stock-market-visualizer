@@ -1,0 +1,81 @@
+# Minimal local stand-in for a Supabase project, for development only.
+# Runs Postgres, Supabase Auth (GoTrue) and PostgREST behind one gateway, so the app's
+# supabase-py client can use http://127.0.0.1:54321 the same way it uses a hosted project.
+# Applies ../supabase_setup.sql once Auth has created the auth schema.
+#
+# Use with:
+#   SUPABASE_URL=http://127.0.0.1:54321
+#   SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+# (the public demo key used by the Supabase CLI, signed with the JWT_SECRET below; local use only)
+
+x-jwt-secret: &jwt_secret super-secret-jwt-token-with-at-least-32-characters-long
+
+services:
+  db:
+    image: public.ecr.aws/supabase/postgres:17.11.0.018
+    environment:
+      POSTGRES_PASSWORD: postgres
+      JWT_SECRET: *jwt_secret
+    volumes:
+      - ./roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      interval: 3s
+      retries: 40
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.197.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://127.0.0.1:${SUPABASE_PORT:-54321}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgresql://supabase_auth_admin:postgres@db:5432/postgres
+      GOTRUE_SITE_URL: http://127.0.0.1:8050
+      GOTRUE_JWT_SECRET: *jwt_secret
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_DISABLE_SIGNUP: "false"
+
+  setup:
+    image: public.ecr.aws/supabase/postgres:17.11.0.018
+    depends_on:
+      - auth
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ../supabase_setup.sql:/setup.sql:ro
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        until psql -h db -U supabase_admin -d postgres -tAc "select 1 from auth.users limit 1" >/dev/null 2>&1; do sleep 2; done
+        psql -h db -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q -f /setup.sql && echo "supabase_setup.sql applied"
+    restart: "no"
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v16.5
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    environment:
+      PGRST_DB_URI: postgres://authenticator:postgres@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: *jwt_secret
+
+  gateway:
+    image: nginx:1.27-alpine
+    depends_on:
+      - auth
+      - rest
+    ports:
+      - "127.0.0.1:${SUPABASE_PORT:-54321}:8000"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
