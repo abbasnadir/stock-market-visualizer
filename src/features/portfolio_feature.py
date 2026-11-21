@@ -95,10 +95,12 @@ class PortfolioFeature(BaseFeature):
             Output("portfolio-holdings-table", "data"),
             Input("portfolio-refresh-btn", "n_clicks"),
             Input("global-user-store", "data"),
+            # The trading callback rewrites this table after every order, so a trade refreshes this view too
+            Input("trade-holdings-table", "data"),
             prevent_initial_call=False,
         )
-        def refresh_portfolio(_, user_store):
-            del _
+        def refresh_portfolio(_, user_store, _trade_data):
+            del _, _trade_data
             try:
                 user_store = user_store or {}
                 user_id = user_store.get("user_id")
@@ -117,8 +119,9 @@ class PortfolioFeature(BaseFeature):
                     return "$0.00", "$0.00", "$0.00", "0", "Sign in to unlock analytics.", [dcc_graph(figure)], []
 
                 try:
-                    balance = self.services.portfolio_repository.get_balance(user_id)
-                    positions = self.services.portfolio_repository.get_positions(user_id)
+                    repository = self.services.portfolio_repository.for_session(user_store)
+                    balance = repository.get_balance(user_id)
+                    positions = repository.get_positions(user_id)
                 except RuntimeError as exc:
                     figure = go.Figure()
                     figure.add_annotation(

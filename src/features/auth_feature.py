@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import time
+
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 
 from src.features.base_feature import BaseFeature
+
+# Access tokens last an hour; renew them when less than this is left.
+TOKEN_REFRESH_MARGIN_SECONDS = 600
 
 
 class AuthFeature(BaseFeature):
@@ -57,6 +62,7 @@ class AuthFeature(BaseFeature):
                             ],
                             className="status-panel",
                         ),
+                        dcc.Interval(id="auth-refresh-interval", interval=300000, n_intervals=0),
                     ],
                     className="auth-panel",
                 )
@@ -88,6 +94,7 @@ class AuthFeature(BaseFeature):
             Input("profile-switch-btn", "n_clicks"),
             Input("profile-logout-btn", "n_clicks"),
             Input("app-location", "pathname"),
+            Input("auth-refresh-interval", "n_intervals"),
             State("auth-email-input", "value"),
             State("auth-password-input", "value"),
             State("global-user-store", "data"),
@@ -100,38 +107,37 @@ class AuthFeature(BaseFeature):
             switch_clicks,
             prof_logout_clicks,
             pathname,
+            refresh_ticks,
             email,
             password,
             user_store,
         ):
-            del login_clicks, signup_clicks, logout_clicks, switch_clicks, prof_logout_clicks, pathname
+            del login_clicks, signup_clicks, logout_clicks, switch_clicks, prof_logout_clicks, pathname, refresh_ticks
             try:
                 action = ctx.triggered_id
                 user_store = user_store or {}
 
-                if action == "app-location":
-                    if user_store.get("user_id"):
-                        email = user_store.get("email", "Signed in")
+                if action in {"app-location", "auth-refresh-interval"}:
+                    # The session lives only in this browser's store; renew its token before it expires.
+                    if not user_store.get("user_id"):
+                        return no_update, no_update, "Current user: not signed in"
+
+                    email = user_store.get("email", "Signed in")
+                    expires_at = float(user_store.get("expires_at") or 0)
+                    if expires_at - time.time() > TOKEN_REFRESH_MARGIN_SECONDS:
                         return no_update, no_update, f"Current user: {email}"
 
-                    current_user = self.services.supabase_service.get_current_user()
-                    if current_user:
-                        profile_result = self.services.portfolio_repository.ensure_user_profile(
-                            current_user["user_id"],
-                            email=current_user.get("email", ""),
-                        )
-                        profile_message = ""
-                        if not profile_result.success:
-                            profile_message = f" Profile setup issue: {profile_result.message}"
-                        return (
-                            f"Session restored.{profile_message}",
-                            current_user,
-                            f"Current user: {current_user.get('email', 'Signed in')}",
-                        )
-                    return no_update, no_update, "Current user: not signed in"
+                    refreshed = self.services.supabase_service.refresh_session(user_store.get("refresh_token"))
+                    if refreshed.success:
+                        return no_update, refreshed.data, f"Current user: {email}"
+                    return (
+                        "Session expired. Log in again.",
+                        {},
+                        "Current user: not signed in",
+                    )
 
                 if action in {"auth-logout-btn", "profile-logout-btn", "profile-switch-btn"}:
-                    result = self.services.supabase_service.sign_out()
+                    result = self.services.supabase_service.sign_out(user_store.get("access_token"))
                     if result.success:
                         return (
                             "Logged out successfully.",
@@ -156,20 +162,20 @@ class AuthFeature(BaseFeature):
                     if result.success:
                         data = result.data or {}
                         user_id = data.get("user_id")
-                        profile_message = ""
-                        if user_id:
-                            profile_result = self.services.portfolio_repository.ensure_user_profile(user_id, email=email)
+                        if user_id and data.get("access_token"):
+                            profile_message = ""
+                            profile_result = self.services.portfolio_repository.for_session(data).ensure_user_profile(
+                                user_id, email=email
+                            )
                             if not profile_result.success:
                                 profile_message = f" Profile setup issue: {profile_result.message}"
-                        current_user = self.services.supabase_service.get_current_user()
-                        if current_user:
                             return (
                                 f"{result.message}{profile_message}",
-                                current_user,
-                                f"Current user: {current_user.get('email', email)}",
+                                data,
+                                f"Current user: {data.get('email', email)}",
                             )
                         return (
-                            f"{result.message}{profile_message} Sign in after verification if required.",
+                            f"{result.message} Sign in after verification if required.",
                             {},
                             "Current user: not signed in",
                         )
@@ -198,12 +204,14 @@ class AuthFeature(BaseFeature):
                             resolved_email = login_data.get("email", email)
                             profile_message = ""
                             if user_id:
-                                profile_result = self.services.portfolio_repository.ensure_user_profile(user_id, email=resolved_email)
+                                profile_result = self.services.portfolio_repository.for_session(login_data).ensure_user_profile(
+                                    user_id, email=resolved_email
+                                )
                                 if not profile_result.success:
                                     profile_message = f" Profile setup issue: {profile_result.message}"
                             return (
                                 f"{result.message} Logged in with existing account.{profile_message}",
-                                {"user_id": user_id, "email": resolved_email},
+                                login_data,
                                 f"Current user: {resolved_email}",
                             )
                         return (
@@ -222,12 +230,14 @@ class AuthFeature(BaseFeature):
                         resolved_email = data.get("email", email)
                         profile_message = ""
                         if user_id:
-                            profile_result = self.services.portfolio_repository.ensure_user_profile(user_id, email=resolved_email)
+                            profile_result = self.services.portfolio_repository.for_session(data).ensure_user_profile(
+                                user_id, email=resolved_email
+                            )
                             if not profile_result.success:
                                 profile_message = f" Profile setup issue: {profile_result.message}"
                         return (
                             f"{result.message}{profile_message}",
-                            {"user_id": user_id, "email": resolved_email},
+                            data,
                             f"Current user: {resolved_email}",
                         )
                     return (result.message, no_update, no_update)

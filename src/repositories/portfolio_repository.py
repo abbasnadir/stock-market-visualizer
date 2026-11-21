@@ -12,20 +12,36 @@ from src.services.supabase_service import SupabaseService
 class PortfolioRepository:
     """Manages user balances, positions, watchlists, and alerts."""
 
-    def __init__(self, supabase_service: SupabaseService, default_cash_balance: float) -> None:
+    def __init__(
+        self,
+        supabase_service: SupabaseService,
+        default_cash_balance: float,
+        access_token: str | None = None,
+    ) -> None:
         self.supabase_service = supabase_service
         self.default_cash_balance = float(default_cash_balance)
+        self._user_client = supabase_service.client_for(access_token)
+
+    def for_session(self, user_store: dict[str, Any] | None) -> PortfolioRepository:
+        """Repository bound to the signed-in user of one browser session.
+
+        Queries run with that user's access token, so RLS only lets them reach their own rows.
+        """
+        access_token = (user_store or {}).get("access_token")
+        return PortfolioRepository(self.supabase_service, self.default_cash_balance, access_token=access_token)
 
     @property
     def _client(self):
-        return self.supabase_service.client
+        return self._user_client
 
     def _require_client(self):
-        client = self._client
-        if not client:
+        if not self.supabase_service.is_configured:
             raise RuntimeError(
                 "Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to .env and restart the app."
             )
+        client = self._client
+        if not client:
+            raise RuntimeError("Your session has expired. Log in again.")
         return client
 
     def _utc_now(self) -> str:
@@ -50,7 +66,8 @@ class PortfolioRepository:
                 "email": email,
                 "balance": self.default_cash_balance,
             }
-            client.table("profiles").upsert(payload, on_conflict="id").execute()
+            # Only creates a missing profile; an existing one keeps its balance.
+            client.table("profiles").upsert(payload, on_conflict="id", ignore_duplicates=True).execute()
             return OperationResult(True, "Profile synced with Supabase.", payload)
         except Exception as exc:
             error_text = self._friendly_db_error(exc, "profiles", "profile sync")

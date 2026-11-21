@@ -128,8 +128,9 @@ class ProfileFeature(BaseFeature):
             name = email.split("@")[0].capitalize() if email else "User"
 
             try:
-                cash = self.services.portfolio_repository.get_balance(user_id)
-                positions = self.services.portfolio_repository.get_positions(user_id)
+                repository = self.services.portfolio_repository.for_session(user_data)
+                cash = repository.get_balance(user_id)
+                positions = repository.get_positions(user_id)
             except RuntimeError as exc:
                 return (
                     initials,

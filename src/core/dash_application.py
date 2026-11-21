@@ -185,28 +185,29 @@ class StockDashApplication:
             watchlist_status = badge("Live", "live")
             alerts_status = badge("Live", "live")
             errors: list[str] = []
+            repository = self.services.portfolio_repository.for_session(user_store)
 
             try:
-                self.services.portfolio_repository.get_balance(user_id)
-                self.services.portfolio_repository.get_transactions(user_id, limit=1)
+                repository.get_balance(user_id)
+                repository.get_transactions(user_id, limit=1)
             except RuntimeError:
                 trading_status = badge("Issue", "error")
                 errors.append("trading")
 
             try:
-                self.services.portfolio_repository.get_positions(user_id)
+                repository.get_positions(user_id)
             except RuntimeError:
                 portfolio_status = badge("Issue", "error")
                 errors.append("portfolio")
 
             try:
-                self.services.portfolio_repository.get_watchlist(user_id)
+                repository.get_watchlist(user_id)
             except RuntimeError:
                 watchlist_status = badge("Issue", "error")
                 errors.append("watchlist")
 
             try:
-                self.services.portfolio_repository.get_alerts(user_id)
+                repository.get_alerts(user_id)
             except RuntimeError:
                 alerts_status = badge("Issue", "error")
                 errors.append("alerts")

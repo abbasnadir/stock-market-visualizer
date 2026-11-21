@@ -7,6 +7,7 @@ from typing import Any
 from dash import Dash, Input, Output, State, ctx, dash_table, dcc, html
 
 from src.features.base_feature import BaseFeature
+from src.repositories.portfolio_repository import PortfolioRepository
 from src.ui.formatters import format_currency, normalize_symbol
 
 
@@ -160,9 +161,9 @@ class TradingFeature(BaseFeature):
             ]
         )
 
-    def _build_holdings_rows(self, user_id: str) -> list[dict[str, Any]]:
+    def _build_holdings_rows(self, repository: PortfolioRepository, user_id: str) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        positions = self.services.portfolio_repository.get_positions(user_id)
+        positions = repository.get_positions(user_id)
         snapshots = self.services.market_data_service.get_quote_map([position["symbol"] for position in positions])
 
         for position in positions:
@@ -186,9 +187,9 @@ class TradingFeature(BaseFeature):
 
         return rows
 
-    def _build_activity_rows(self, user_id: str) -> list[dict[str, Any]]:
+    def _build_activity_rows(self, repository: PortfolioRepository, user_id: str) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        for item in self.services.portfolio_repository.get_transactions(user_id, limit=8):
+        for item in repository.get_transactions(user_id, limit=8):
             quantity = float(item.get("quantity") or 0.0)
             price = float(item.get("price") or 0.0)
             rows.append(
@@ -275,11 +276,13 @@ class TradingFeature(BaseFeature):
                 if not user_id:
                     return "Log in to access trading features.", "Balance: N/A", [], []
 
+                repository = self.services.portfolio_repository.for_session(user_store)
+
                 def current_snapshot():
                     try:
-                        balance_value = self.services.portfolio_repository.get_balance(user_id)
-                        holdings_rows = self._build_holdings_rows(user_id)
-                        activity_rows = self._build_activity_rows(user_id)
+                        balance_value = repository.get_balance(user_id)
+                        holdings_rows = self._build_holdings_rows(repository, user_id)
+                        activity_rows = self._build_activity_rows(repository, user_id)
                         return balance_value, holdings_rows, activity_rows, None
                     except RuntimeError as exc:
                         return 0.0, [], [], str(exc)
@@ -326,9 +329,9 @@ class TradingFeature(BaseFeature):
                         )
 
                     if action == "trade-buy-btn":
-                        result = self.services.portfolio_repository.buy_stock(user_id, symbol, quantity, price)
+                        result = repository.buy_stock(user_id, symbol, quantity, price)
                     else:
-                        result = self.services.portfolio_repository.sell_stock(user_id, symbol, quantity, price)
+                        result = repository.sell_stock(user_id, symbol, quantity, price)
 
                     message = result.message
 

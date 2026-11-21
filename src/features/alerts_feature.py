@@ -159,6 +159,7 @@ class AlertsFeature(BaseFeature):
                 if not user_id:
                     return "Log in to manage alerts.", [], [html.Li("No alerts triggered.")]
 
+                repository = self.services.portfolio_repository.for_session(user_store)
                 action = ctx.triggered_id
                 symbol = normalize_symbol(symbol)
                 selected_rows = selected_rows or []
@@ -166,7 +167,7 @@ class AlertsFeature(BaseFeature):
                 message = "Alerts refreshed."
 
                 def load_alert_rows():
-                    alerts_data = self.services.portfolio_repository.get_alerts(user_id)
+                    alerts_data = repository.get_alerts(user_id)
                     snapshots = self.services.market_data_service.get_quote_map([item["symbol"] for item in alerts_data])
                     rows = []
                     for item in alerts_data:
@@ -207,7 +208,7 @@ class AlertsFeature(BaseFeature):
                             return str(exc), [], [html.Li("No alerts triggered.")]
                         return "Target price must be greater than 0.", rows, [html.Li("No alerts triggered.")]
 
-                    result = self.services.portfolio_repository.add_alert(
+                    result = repository.add_alert(
                         user_id=user_id,
                         symbol=symbol,
                         target_price=float(target_price),
@@ -225,7 +226,7 @@ class AlertsFeature(BaseFeature):
                     selected_index = selected_rows[0]
                     if selected_index < len(table_rows):
                         alert_id = int(table_rows[selected_index]["alert_id"])
-                        result = self.services.portfolio_repository.remove_alert(user_id, alert_id)
+                        result = repository.remove_alert(user_id, alert_id)
                         message = result.message
 
                 try:
@@ -245,7 +246,7 @@ class AlertsFeature(BaseFeature):
                         else:
                             unavailable_symbols.append(ticker)
 
-                    triggered = self.services.portfolio_repository.check_alerts(user_id, market_prices)
+                    triggered = repository.check_alerts(user_id, market_prices)
                     if triggered:
                         triggered_items = [html.Li(line) for line in triggered]
                     message = f"Checked {len(symbols)} symbol(s) against active alerts."
