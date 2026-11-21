@@ -39,11 +39,12 @@ def main() -> int:
         result = auth.sign_up(DEMO_EMAIL, DEMO_PASSWORD)
     logging.getLogger("src.services.supabase_service").disabled = False
     print(f"auth: {result.message}")
-    user = auth.get_current_user()
-    if not user:
+    session = result.data or {}
+    if not session.get("access_token"):
         print("Could not get a signed-in session.")
         return 1
-    user_id = user["user_id"]
+    user_id = session["user_id"]
+    repo = repo.for_session(session)
     print(repo.ensure_user_profile(user_id, email=DEMO_EMAIL).message)
 
     held = {p["symbol"] for p in repo.get_positions(user_id)}

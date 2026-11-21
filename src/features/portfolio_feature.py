@@ -117,8 +117,9 @@ class PortfolioFeature(BaseFeature):
                     return "$0.00", "$0.00", "$0.00", "0", "Sign in to unlock analytics.", [dcc_graph(figure)], []
 
                 try:
-                    balance = self.services.portfolio_repository.get_balance(user_id)
-                    positions = self.services.portfolio_repository.get_positions(user_id)
+                    repository = self.services.portfolio_repository.for_session(user_store)
+                    balance = repository.get_balance(user_id)
+                    positions = repository.get_positions(user_id)
                 except RuntimeError as exc:
                     figure = go.Figure()
                     figure.add_annotation(

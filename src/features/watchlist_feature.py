@@ -115,6 +115,7 @@ class WatchlistFeature(BaseFeature):
                 if not user_id:
                     return "Log in to manage your watchlist.", [], "0"
 
+                repository = self.services.portfolio_repository.for_session(user_store)
                 action = ctx.triggered_id
                 symbol = normalize_symbol(symbol)
                 selected_rows = selected_rows or []
@@ -128,15 +129,15 @@ class WatchlistFeature(BaseFeature):
                 message = "Watchlist refreshed."
 
                 if action == "watchlist-add-btn":
-                    result = self.services.portfolio_repository.add_to_watchlist(user_id, symbol)
+                    result = repository.add_to_watchlist(user_id, symbol)
                     message = result.message
                 elif action == "watchlist-remove-btn":
                     target_symbol = symbol or selected_symbol
-                    result = self.services.portfolio_repository.remove_from_watchlist(user_id, target_symbol)
+                    result = repository.remove_from_watchlist(user_id, target_symbol)
                     message = result.message
 
                 try:
-                    watchlist = self.services.portfolio_repository.get_watchlist(user_id)
+                    watchlist = repository.get_watchlist(user_id)
                 except RuntimeError as exc:
                     return str(exc), [], "0"
 
