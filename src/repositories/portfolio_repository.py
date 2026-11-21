@@ -50,7 +50,8 @@ class PortfolioRepository:
                 "email": email,
                 "balance": self.default_cash_balance,
             }
-            client.table("profiles").upsert(payload, on_conflict="id").execute()
+            # Only creates a missing profile; an existing one keeps its balance.
+            client.table("profiles").upsert(payload, on_conflict="id", ignore_duplicates=True).execute()
             return OperationResult(True, "Profile synced with Supabase.", payload)
         except Exception as exc:
             error_text = self._friendly_db_error(exc, "profiles", "profile sync")
