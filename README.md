@@ -2,7 +2,7 @@
 
 A Dash web app for looking up US stocks and practising trades with play money. Market data comes live from Yahoo Finance through `yfinance`; accounts, cash balances, holdings, the trade ledger, watchlists and price alerts are stored in Supabase (Auth + Postgres with row-level security).
 
-![Buying 4 AMZN shares at the live price on the Trading page, then refreshing the portfolio view](docs/demo/paper-trade.gif)
+![Buying 4 AMZN shares at the live price on the Trading page, then opening the Portfolio page, which already shows the new position and cash](docs/demo/paper-trade.gif)
 
 *Recorded locally against a local Supabase stand-in (`local-supabase/`) with a demo account created by `scripts/seed_demo.py`. Prices are live Yahoo Finance quotes at the time of recording.*
 
@@ -27,9 +27,9 @@ A Dash web app for looking up US stocks and practising trades with play money. M
 ## How it works
 
 - `app.py` builds `StockDashApplication` (`src/core/dash_application.py`), which creates one Dash app and mounts seven feature classes from `src/features/` (auth, market, trading, portfolio, watchlist, alerts, profile). Each feature supplies its layout and registers its own callbacks.
-- `src/core/service_container.py` creates the shared services once: settings from environment variables, `SupabaseService` (client and auth calls), `MarketDataService` (yfinance) and `PortfolioRepository` (all table reads and writes).
-- The five pages (`/`, `/trading`, `/portfolio`, `/watchlist`, `/alerts`) are all in one layout. A callback on the URL shows one pane and hides the rest, so moving between pages does not reload data; the portfolio view refreshes on login or with "Refresh Analytics".
-- After login the user id and email go into a session-scoped `dcc.Store`; feature callbacks read the user id from there and stay locked until it is set.
+- `src/core/service_container.py` creates the shared services once: settings from environment variables, `SupabaseService` (auth calls and per-user clients), `MarketDataService` (yfinance) and `PortfolioRepository` (all table reads and writes).
+- The five pages (`/`, `/trading`, `/portfolio`, `/watchlist`, `/alerts`) are all in one layout. A callback on the URL shows one pane and hides the rest, so moving between pages does not reload data; the portfolio view refreshes on login, after each trade, and with "Refresh Analytics".
+- After login the user id, email and Supabase access and refresh tokens go into a session-scoped `dcc.Store` in the browser. Feature callbacks read them from there and stay locked until they are set. Each callback queries Supabase with a client built from that browser's access token (`PortfolioRepository.for_session`), so row-level security applies to the right user and the server keeps no login state of its own. The token is renewed when less than 10 minutes remain (checked on page load and every 5 minutes); if renewal fails, the browser is signed out.
 - Buys and sells are done in `PortfolioRepository.buy_stock` / `sell_stock` as separate writes (position upsert, balance update, ledger insert), not in a single database transaction.
 - `supabase_setup.sql` creates the five tables (`profiles`, `portfolios`, `transactions`, `watchlists`, `alerts`), turns on RLS with "own rows only" policies, and adds a trigger that creates a profile row when an auth user is created. `dbdesign.md` describes the schema.
 
@@ -82,16 +82,16 @@ The seed script creates `demo@example.com` / `demo-password-123`, buys a few pos
 ```text
 auth: Sign-up successful. Check your mailbox if email confirmation is enabled.
 Profile synced with Supabase.
-Bought 10 share(s) of AAPL at $356.27.
-Bought 6 share(s) of MSFT at $523.88.
-Bought 12 share(s) of NVDA at $162.85.
-Bought 8 share(s) of JPM at $346.19.
+Bought 10 share(s) of AAPL at $342.56.
+Bought 6 share(s) of MSFT at $484.52.
+Bought 12 share(s) of NVDA at $125.53.
+Bought 8 share(s) of JPM at $310.53.
 Added AMZN to watchlist.
 Added GOOGL to watchlist.
 Added TSLA to watchlist.
 Alert created for AAPL.
 Alert created for TSLA.
-cash balance: $88,570.30
+cash balance: $89,676.68
 sign in with demo@example.com / demo-password-123
 ```
 
@@ -117,12 +117,7 @@ Open `http://127.0.0.1:8050` and sign in from the Account panel. The layout puts
 
 Without Supabase settings the market overview still works and the account features show as unavailable.
 
-There are no automated tests in this repo.
-
-## Known issues
-
-- **Cash resets on every login.** `PortfolioRepository.ensure_user_profile` upserts the profile with `balance = DEFAULT_CASH_BALANCE`, and the login callback calls it each time (`src/repositories/portfolio_repository.py`, `src/features/auth_feature.py`). Holdings are kept but cash goes back to $100,000, which is why the portfolio screenshot shows $100,000 cash after the seed spent about $11,400.
-- **One Supabase client for the whole server.** `SupabaseService` creates a single client and signs it in, so with several people using one running instance they share that client's session. Fine for a single local user; it would need per-user clients or tokens for anything shared.
+There are no automated tests in this repo. The session handling was checked with Playwright: two users signed in from separate browser contexts each saw only their own cash and holdings, a third browser that never signed in stayed signed out with trading locked, the seeded account kept the cash the seed script left when it logged in again, and a renewed token kept working after a page reload.
 
 ## Project structure
 
